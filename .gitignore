@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+# surowe notowania ze stooq (do pobrania skryptem)
+data/raw/
