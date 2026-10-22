@@ -8,6 +8,7 @@ Przykłady:
 """
 import argparse
 import datetime as dt
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -16,7 +17,7 @@ import pandas as pd
 from gem import report
 from gem.backtest import Params, momentum, decide, run_buy_and_hold, run_gem, signals
 from gem.config import ASSETS, BONDS, DEFAULTS, EQUITIES
-from gem.data import load_market_data
+from gem.data import StooqError, load_market_data
 from gem.metrics import annual_returns, drawdown, summary, time_in_assets
 
 ROOT = Path(__file__).resolve().parent
@@ -99,7 +100,14 @@ def main():
     args = ap.parse_args()
 
     print("Pobieram/wczytuję notowania...")
-    md = load_market_data(refresh=args.refresh)
+    try:
+        md = load_market_data(refresh=args.refresh)
+    except StooqError as e:
+        sys.exit(f"\nBŁĄD: {e}")
+    print("\nŹródła danych (miesięczne stopy zwrotu):")
+    for k, a in ASSETS.items():
+        segs = provenance_segments(md.provenance[k])
+        print(f"  {a.name:18s} " + "; ".join(f"{g['label']} {g['from']}–{g['to']}" for g in segs))
     returns = md.returns
     if args.end:
         returns = returns.loc[:pd.Timestamp(args.end) + pd.offsets.MonthEnd(0)]

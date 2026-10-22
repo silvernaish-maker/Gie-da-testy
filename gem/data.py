@@ -1,11 +1,15 @@
 """Pobieranie notowań ze stooq.pl i budowa miesięcznych stóp zwrotu w PLN.
 
 Surowe pliki CSV trafiają do data/raw/ (pobierane raz, odświeżane flagą
---refresh). Jeśli stooq jest niedostępny, można tam ręcznie wrzucić pliki
-pobrane ze strony stooq (przycisk „Pobierz dane w pliku .csv”), nazwane
-symbolem, np. data/raw/cspx.uk.csv albo data/raw/^tbsp.csv.
+--refresh). Od 2026 r. stooq wymaga do pobierania CSV darmowego klucza API:
+skrypt poprosi o niego przy pierwszym pobraniu i zapisze w stooq_apikey.txt
+(można go też podać w zmiennej środowiskowej STOOQ_APIKEY). Pliki CSV
+pobrane ręcznie ze strony stooq można wrzucić do data/raw/ pod nazwą
+symbolu, np. data/raw/cspx.uk.csv albo data/raw/^tbsp.csv.
 """
 import os
+import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
@@ -16,12 +20,18 @@ import requests
 
 from .config import ASSETS, FX_SYMBOLS, Source
 
-RAW_DIR = Path(os.environ.get("GEM_DATA_DIR") or Path(__file__).resolve().parent.parent / "data" / "raw")
+ROOT = Path(__file__).resolve().parent.parent
+RAW_DIR = Path(os.environ.get("GEM_DATA_DIR") or ROOT / "data" / "raw")
+APIKEY_FILE = ROOT / "stooq_apikey.txt"
+APIKEY_PAGE = "https://stooq.pl/q/d/?s=usdpln&get_apikey"
 STOOQ_URLS = (
     "https://stooq.pl/q/d/l/?s={sym}&i=d",
     "https://stooq.com/q/d/l/?s={sym}&i=d",
 )
 HEADERS = {"User-Agent": "Mozilla/5.0 (gem-simulation)"}
+
+_apikey = None
+_asked = False
 
 
 class StooqError(RuntimeError):
@@ -47,30 +57,90 @@ def _parse_csv(path: Path) -> pd.Series:
     return s.dropna().sort_index()
 
 
+def _clean_key(text: str) -> str:
+    """Klucz z wklejonego tekstu – sam klucz albo cały link z „apikey=...”."""
+    m = re.search(r"apikey=([A-Za-z0-9]+)", text)
+    return m.group(1) if m else text.strip().strip('"\'')
+
+
+def _page_text(html_text: str) -> str:
+    txt = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html_text, flags=re.S | re.I)
+    txt = re.sub(r"<[^>]+>", " ", txt)
+    return re.sub(r"\s+", " ", txt).strip()
+
+
+def _load_apikey():
+    global _apikey
+    if _apikey is None:
+        key = os.environ.get("STOOQ_APIKEY", "")
+        if not key and APIKEY_FILE.exists():
+            key = APIKEY_FILE.read_text(encoding="utf-8")
+        _apikey = _clean_key(key) if key.strip() else ""
+    return _apikey
+
+
+def _ask_apikey(reason: str) -> str:
+    """Prosi o klucz API stooq (raz na uruchomienie) i zapisuje go do pliku."""
+    global _apikey, _asked
+    instructions = (
+        f"\n{reason}\n"
+        "Stooq wymaga darmowego klucza API do pobierania plików CSV. Jak go zdobyć:\n"
+        f"  1. Otwórz w przeglądarce: {APIKEY_PAGE}\n"
+        "  2. Przepisz kod z obrazka (captcha) i zatwierdź.\n"
+        "  3. Na dole strony pojawi się link „Pobierz dane w pliku .csv” – kliknij go\n"
+        "     prawym przyciskiem, wybierz „Kopiuj adres linku” i wklej tutaj.\n"
+        "     (Wystarczy też sam klucz, czyli tekst po „apikey=”.)\n"
+    )
+    if _asked or not sys.stdin or not sys.stdin.isatty():
+        raise StooqError(instructions + f"Zapisz klucz w pliku {APIKEY_FILE} i uruchom ponownie.")
+    _asked = True
+    print(instructions)
+    key = _clean_key(input("Wklej link albo klucz i naciśnij Enter: "))
+    if not key:
+        raise StooqError("Nie podano klucza API stooq.")
+    APIKEY_FILE.write_text(key + "\n", encoding="utf-8")
+    print(f"Zapisano klucz w {APIKEY_FILE.name}. Pobieram dalej...\n")
+    _apikey = key
+    return key
+
+
 def fetch(symbol: str, refresh: bool = False) -> pd.Series | None:
     """Dzienne zamknięcia dla symbolu stooq (z cache w data/raw/)."""
     path = _raw_path(symbol)
     if path.exists() and not refresh:
         return _parse_csv(path)
     errors = []
-    for url in STOOQ_URLS:
-        try:
-            r = requests.get(url.format(sym=quote(symbol)), headers=HEADERS, timeout=30)
-        except requests.RequestException as e:
-            errors.append(f"{url.split('/')[2]}: {e.__class__.__name__}")
-            continue
-        text = r.text.strip()
-        head = text[:200].lower()
-        if r.ok and (head.startswith("data,") or head.startswith("date,")):
-            RAW_DIR.mkdir(parents=True, exist_ok=True)
-            path.write_text(text + "\n", encoding="utf-8")
-            return _parse_csv(path)
-        if "limit" in head:
-            raise StooqError(f"stooq: przekroczony dzienny limit pobrań ({symbol})")
-        errors.append(f"{url.split('/')[2]}: HTTP {r.status_code} '{text[:40]}'")
+    print(f"  pobieram {symbol}")
+    for attempt in range(2):
+        key = _load_apikey()
+        needs_key = False
+        for url in STOOQ_URLS:
+            full = url.format(sym=quote(symbol)) + (f"&apikey={key}" if key else "")
+            try:
+                r = requests.get(full, headers=HEADERS, timeout=30)
+            except requests.RequestException as e:
+                errors.append(f"{url.split('/')[2]}: {e.__class__.__name__}")
+                continue
+            text = r.text.strip()
+            head = text[:200].lower()
+            if r.ok and (head.startswith("data,") or head.startswith("date,")):
+                RAW_DIR.mkdir(parents=True, exist_ok=True)
+                path.write_text(text + "\n", encoding="utf-8")
+                return _parse_csv(path)
+            if "limit" in head and "<" not in head[:1]:
+                raise StooqError(f"stooq: przekroczony dzienny limit pobrań ({symbol}). Spróbuj jutro.")
+            if head.startswith("<") and "apikey" in text.lower():
+                needs_key = True
+                break
+            snippet = _page_text(text)[:80] if head.startswith("<") else text[:60]
+            errors.append(f"{url.split('/')[2]}: HTTP {r.status_code} '{snippet}'")
+        if not needs_key:
+            break
+        _ask_apikey("Stooq nie przyjął zapytania bez klucza API." if not key
+                    else "Stooq odrzucił zapisany klucz API (wygasł albo jest błędny).")
     if path.exists():  # odświeżenie się nie udało – zostajemy przy starych danych
         return _parse_csv(path)
-    print(f"  [brak danych] {symbol}: {'; '.join(errors)}")
+    print(f"  [brak danych] {symbol}: {'; '.join(errors) or 'brak odpowiedzi'}")
     return None
 
 

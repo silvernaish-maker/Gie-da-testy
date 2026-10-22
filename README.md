@@ -59,6 +59,19 @@ na Windows zaznacz w instalatorze „Add python.exe to PATH”).
 3. Skrypt sam utworzy środowisko Pythona (`.venv`), pobierze notowania ze stooq,
    policzy symulację i otworzy raport w przeglądarce.
 
+### Klucz API stooq
+
+Od 2026 r. stooq udostępnia pliki CSV tylko z darmowym kluczem API. Przy pierwszym
+pobieraniu skrypt poprosi o klucz:
+
+1. Otwórz w przeglądarce <https://stooq.pl/q/d/?s=usdpln&get_apikey>.
+2. Przepisz kod z obrazka i zatwierdź.
+3. Na dole strony kliknij prawym przyciskiem link „Pobierz dane w pliku .csv”,
+   wybierz „Kopiuj adres linku” i wklej go w oknie skryptu.
+
+Klucz zapisze się w `stooq_apikey.txt` (plik nie trafia do repozytorium). Można go też
+podać w zmiennej środowiskowej `STOOQ_APIKEY`.
+
 Kolejne uruchomienia korzystają z zapisanych danych; świeże notowania pobierzesz,
 dopisując `--refresh` (np. `uruchom_windows.bat --refresh`).
 
@@ -79,9 +92,9 @@ Wyniki:
 
 ### Dane
 
-Notowania pobierane są ze [stooq.pl](https://stooq.pl) i zapisywane w `data/raw/`
-(ten katalog nie trafia do repozytorium). Jeśli pobieranie nie działa (limit dzienny,
-brak dostępu do sieci), pobierz plik CSV ręcznie ze stooq („Dane historyczne” →
+Notowania pobierane są ze [stooq.pl](https://stooq.pl) (z kluczem API, patrz wyżej)
+i zapisywane w `data/raw/` (ten katalog nie trafia do repozytorium). Jeśli pobieranie
+nie działa (limit dzienny, brak dostępu do sieci), pobierz plik CSV ręcznie ze stooq („Dane historyczne” →
 „Pobierz dane w pliku .csv”, interwał dzienny) i zapisz go jako
 `data/raw/<symbol>.csv`. Symbole: `usdpln`, `cndx.uk`, `qqq.us`, `^ndx`, `cspx.uk`, `spy.us`,
 `^spx`, `etfbw20tr`, `wig20tr`, `etfbm40tr`, `mwig40tr`, `etfbs80tr`, `swig80tr`,

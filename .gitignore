@@ -4,3 +4,5 @@ __pycache__/
 # surowe notowania ze stooq (do pobrania skryptem)
 data/raw/
 .venv/
+# prywatny klucz API stooq
+stooq_apikey.txt

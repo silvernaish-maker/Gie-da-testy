@@ -1,6 +1,6 @@
 @echo off
 rem Symulacja GEM: tworzy srodowisko Pythona, pobiera dane ze stooq i otwiera raport.
-chcp 65001 >nul
+set PYTHONIOENCODING=utf-8
 cd /d "%~dp0"
 if not exist run_gem.py goto :notextracted
 where py >nul 2>nul && (set PY=py) || (set PY=python)
