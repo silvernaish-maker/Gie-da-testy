@@ -35,7 +35,7 @@ STOOQ_URLS = (
 )
 HEADERS = {"User-Agent": "Mozilla/5.0 (gem-simulation)"}
 # przybliżeń starszych danych szukamy tylko, gdy lepsze źródło zaczyna się później
-TARGET_START = pd.Timestamp("2005-01-31")
+TARGET_START = pd.Timestamp("2005-06-30")
 
 _apikey = None
 _asked = False
@@ -391,7 +391,11 @@ def load_market_data(refresh: bool = False) -> MarketData:
                 combined = pd.concat([combined, r.loc[fill]]).sort_index()
                 label = pd.concat([label, pd.Series(src.label, index=fill)]).sort_index()
         if combined is None:
-            raise StooqError(f"brak jakichkolwiek danych dla {key} ({asset.ticker})")
+            tried = ", ".join(sym for src in asset.sources for sym in src.symbols)
+            raise StooqError(
+                f"brak jakichkolwiek danych dla {asset.name} ({asset.ticker}).\n"
+                f"Sprawdzone symbole stooq: {tried}.\n"
+                "Uruchom skrypt ponownie i na stronach tych symboli kliknij „Pobierz dane w pliku .csv”.")
         rets[key] = combined
         prov[key] = label
 

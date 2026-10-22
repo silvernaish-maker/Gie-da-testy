@@ -94,8 +94,8 @@ ASSETS = {
         sources=(
             Source("price", ("etfbm40tr",), label="ETFBM40TR"),
             Source("price", ("mwig40tr",), proxy=True, label="indeks mWIG40TR"),
-            Source("price", ("mwig40",), proxy=True, extra_annual=0.025,
-                   label="mWIG40 (indeks cenowy + ~2,5% dyw.)"),
+            Source("price", ("mwig40",), proxy=True, extra_annual=0.031,
+                   label="mWIG40 (indeks cenowy + ~3,1% dyw.)"),
         ),
     ),
     "S80": Asset(
@@ -109,8 +109,8 @@ ASSETS = {
         sources=(
             Source("price", ("etfbs80tr",), label="ETFBS80TR"),
             Source("price", ("swig80tr",), proxy=True, label="indeks sWIG80TR"),
-            Source("price", ("swig80",), proxy=True, extra_annual=0.025,
-                   label="sWIG80 (indeks cenowy + ~2,5% dyw.)"),
+            Source("price", ("swig80",), proxy=True, extra_annual=0.030,
+                   label="sWIG80 (indeks cenowy + ~3,0% dyw.)"),
         ),
     ),
     "LONG": Asset(
@@ -138,6 +138,8 @@ ASSETS = {
         sources=(
             Source("price", ("etfbtbsp",), label="ETFBTBSP"),
             Source("price", ("^tbsp", "tbsp"), proxy=True, label="indeks TBSP"),
+            Source("yield", ("5ply.b",), proxy=True, maturity=5.0,
+                   label="syntetyczna 5-letnia obligacja z rentowności PL 5Y"),
         ),
     ),
     "CASH": Asset(
@@ -150,8 +152,10 @@ ASSETS = {
         ter=0.0030,
         sources=(
             Source("price", ("etfbcash",), label="ETFBCASH"),
-            Source("rate", ("plopln6m",), proxy=True,
-                   label="naliczanie WIBOR 6M"),
+            Source("rate", ("plopln6m", "plopln3m"), proxy=True,
+                   label="naliczanie WIBOR"),
+            Source("rate", ("2ply.b",), proxy=True,
+                   label="naliczanie rentowności PL 2Y (przybliżenie stopy krótkiej)"),
         ),
     ),
 }
