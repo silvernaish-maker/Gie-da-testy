@@ -59,18 +59,19 @@ na Windows zaznacz w instalatorze „Add python.exe to PATH”).
 3. Skrypt sam utworzy środowisko Pythona (`.venv`), pobierze notowania ze stooq,
    policzy symulację i otworzy raport w przeglądarce.
 
-### Klucz API stooq
+### Pobieranie ze stooq
 
-Od 2026 r. stooq udostępnia pliki CSV tylko z darmowym kluczem API. Przy pierwszym
-pobieraniu skrypt poprosi o klucz:
+Od 2026 r. stooq blokuje pobieranie plików przez skrypty (sprawdza, czy po drugiej
+stronie jest przeglądarka). Wtedy skrypt sam otwiera linki do plików CSV w Twojej
+przeglądarce, a pobrane pliki odbiera z folderu **Pobrane**. Otworzy się kilkanaście kart
+stooq. Po zakończeniu możesz je zamknąć. Jeśli przeglądarka pyta, czy zezwolić stronie
+na pobieranie wielu plików, wybierz **Zezwalaj**. Gdy stooq pokaże weryfikację albo kod
+z obrazka, przejdź ją w przeglądarce i naciśnij Enter w oknie skryptu.
 
-1. Otwórz w przeglądarce <https://stooq.pl/q/d/?s=usdpln&get_apikey>.
-2. Przepisz kod z obrazka i zatwierdź.
-3. Na dole strony kliknij prawym przyciskiem link „Pobierz dane w pliku .csv”,
-   wybierz „Kopiuj adres linku” i wklej go w oknie skryptu.
-
-Klucz zapisze się w `stooq_apikey.txt` (plik nie trafia do repozytorium). Można go też
-podać w zmiennej środowiskowej `STOOQ_APIKEY`.
+Jeśli przeglądarka zapisuje pliki gdzie indziej niż w Pobranych, ustaw zmienną
+środowiskową `GEM_DOWNLOADS` na ten folder. Gdyby stooq zażądał klucza API, skrypt
+poprosi o niego i zapisze go w `stooq_apikey.txt`. W czarnym oknie konsoli wkleja się
+prawym przyciskiem myszy.
 
 Kolejne uruchomienia korzystają z zapisanych danych; świeże notowania pobierzesz,
 dopisując `--refresh` (np. `uruchom_windows.bat --refresh`).

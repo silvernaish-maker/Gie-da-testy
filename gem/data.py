@@ -1,15 +1,20 @@
 """Pobieranie notowań ze stooq.pl i budowa miesięcznych stóp zwrotu w PLN.
 
 Surowe pliki CSV trafiają do data/raw/ (pobierane raz, odświeżane flagą
---refresh). Od 2026 r. stooq wymaga do pobierania CSV darmowego klucza API:
-skrypt poprosi o niego przy pierwszym pobraniu i zapisze w stooq_apikey.txt
-(można go też podać w zmiennej środowiskowej STOOQ_APIKEY). Pliki CSV
-pobrane ręcznie ze strony stooq można wrzucić do data/raw/ pod nazwą
+--refresh). Od 2026 r. stooq utrudnia pobieranie skryptom:
+- gdy żąda klucza API, skrypt poprosi o niego i zapisze w stooq_apikey.txt
+  (albo weźmie go ze zmiennej środowiskowej STOOQ_APIKEY),
+- gdy żąda sprawdzenia przeglądarki (JavaScript), skrypt otwiera linki CSV
+  w przeglądarce użytkownika i odbiera pliki z folderu Pobrane
+  (inny folder: zmienna GEM_DOWNLOADS).
+Pliki CSV pobrane ręcznie ze stooq można też wrzucić do data/raw/ pod nazwą
 symbolu, np. data/raw/cspx.uk.csv albo data/raw/^tbsp.csv.
 """
 import os
 import re
 import sys
+import time
+import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
@@ -29,9 +34,30 @@ STOOQ_URLS = (
     "https://stooq.com/q/d/l/?s={sym}&i=d",
 )
 HEADERS = {"User-Agent": "Mozilla/5.0 (gem-simulation)"}
+# przybliżeń starszych danych szukamy tylko, gdy lepsze źródło zaczyna się później
+TARGET_START = pd.Timestamp("2005-01-31")
 
 _apikey = None
 _asked = False
+_browser_mode = False
+_browser_waits = 0
+_run_started = time.time()
+
+
+def _downloads_dir() -> Path:
+    """Folder, do którego przeglądarka zapisuje pobrane pliki."""
+    env = os.environ.get("GEM_DOWNLOADS")
+    if env:
+        return Path(env)
+    if sys.platform == "win32":
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders") as k:
+                return Path(winreg.QueryValueEx(k, "{374DE290-123F-4565-9164-39C4925E467B}")[0])
+        except OSError:
+            pass
+    return Path.home() / "Downloads"
 
 
 class StooqError(RuntimeError):
@@ -104,14 +130,104 @@ def _ask_apikey(reason: str) -> str:
     return key
 
 
+def _is_csv(text: str) -> bool:
+    head = text.lstrip("\ufeff").strip()[:200].lower()
+    return head.startswith("data,") or head.startswith("date,")
+
+
+def _is_browser_check(text: str) -> bool:
+    t = text[:5000].lower()
+    return "verify your browser" in t or "requires javascript" in t
+
+
+def _downloaded_file(symbol: str, since: float):
+    """Plik CSV ze stooq w folderze Pobrane, np. usdpln_d.csv albo cspx_uk_d (1).csv."""
+    folder = _downloads_dir()
+    if not folder.is_dir():
+        return None
+    stem = re.escape(symbol.lower().replace(".", "_") + "_d")
+    found = [f for f in folder.glob("*.csv")
+             if re.fullmatch(stem + r"( ?\(\d+\))?", f.stem.lower()) and f.stat().st_mtime >= since]
+    return max(found, key=lambda f: f.stat().st_mtime) if found else None
+
+
+def _wait_for_download(folder: Path, before: dict, timeout: float):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        time.sleep(1)
+        for f in folder.glob("*.csv"):
+            try:
+                st = f.stat()
+            except OSError:
+                continue
+            if f in before and st.st_mtime <= before[f]:
+                continue
+            if st.st_size == 0 or Path(str(f) + ".part").exists():
+                continue  # pobieranie jeszcze trwa
+            time.sleep(0.5)
+            if f.stat().st_size != st.st_size:
+                continue
+            return f
+    return None
+
+
+def _browser_fetch(symbol: str) -> str | None:
+    """Pobranie CSV przez przeglądarkę użytkownika (stooq blokuje skrypty)."""
+    global _browser_waits
+    folder = _downloads_dir()
+    # plik mógł zostać pobrany wcześniej (np. ręcznie albo przy poprzednim uruchomieniu)
+    ready = _downloaded_file(symbol, _run_started - 12 * 3600)
+    if ready is not None:
+        print(f"    biorę {ready.name} z {folder}")
+        text = ready.read_text(encoding="utf-8", errors="replace")
+        return text if _is_csv(text) else ""
+    if not folder.is_dir():
+        raise StooqError(f"Nie znalazłem folderu pobranych plików {folder}. "
+                         "Ustaw zmienną GEM_DOWNLOADS na folder, do którego przeglądarka zapisuje pliki.")
+    key = _load_apikey()
+    url = STOOQ_URLS[0].format(sym=quote(symbol)) + (f"&apikey={key}" if key else "")
+    before = {}
+    for f in folder.glob("*.csv"):
+        try:
+            before[f] = f.stat().st_mtime
+        except OSError:
+            pass
+    for attempt in range(2):
+        webbrowser.open_new_tab(url)
+        timeout = 60 if _browser_waits == 0 else 30
+        _browser_waits += 1
+        print(f"    otworzyłem link w przeglądarce, czekam na plik w {folder} (do {timeout} s)")
+        f = _wait_for_download(folder, before, timeout)
+        if f is None and attempt == 0 and sys.stdin and sys.stdin.isatty():
+            print("    Plik się nie pobrał. Zajrzyj do przeglądarki na kartę stooq:\n"
+                  "    - jeśli widać weryfikację albo kod z obrazka, przejdź ją,\n"
+                  "    - jeśli potem widać link „Pobierz dane w pliku .csv”, kliknij go.")
+            answer = input("    Potem naciśnij Enter (albo wpisz p i Enter, żeby pominąć ten symbol): ")
+            if answer.strip().lower().startswith("p"):
+                return None
+            # plik mógł się pobrać, gdy użytkownik klikał w przeglądarce
+            f = _wait_for_download(folder, before, 2)
+            if f is None:
+                continue
+        if f is None:
+            return None
+        text = f.read_text(encoding="utf-8", errors="replace")
+        return text if _is_csv(text) else ""
+    return None
+
+
 def fetch(symbol: str, refresh: bool = False) -> pd.Series | None:
     """Dzienne zamknięcia dla symbolu stooq (z cache w data/raw/)."""
+    global _browser_mode
     path = _raw_path(symbol)
     if path.exists() and not refresh:
         return _parse_csv(path)
     errors = []
     print(f"  pobieram {symbol}")
+    text = None
     for attempt in range(2):
+        if _browser_mode:
+            break
         key = _load_apikey()
         needs_key = False
         for url in STOOQ_URLS:
@@ -121,23 +237,38 @@ def fetch(symbol: str, refresh: bool = False) -> pd.Series | None:
             except requests.RequestException as e:
                 errors.append(f"{url.split('/')[2]}: {e.__class__.__name__}")
                 continue
-            text = r.text.strip()
-            head = text[:200].lower()
-            if r.ok and (head.startswith("data,") or head.startswith("date,")):
-                RAW_DIR.mkdir(parents=True, exist_ok=True)
-                path.write_text(text + "\n", encoding="utf-8")
-                return _parse_csv(path)
+            body = r.text.strip()
+            head = body[:200].lower()
+            if r.ok and _is_csv(body):
+                text = body
+                break
             if "limit" in head and "<" not in head[:1]:
                 raise StooqError(f"stooq: przekroczony dzienny limit pobrań ({symbol}). Spróbuj jutro.")
-            if head.startswith("<") and "apikey" in text.lower():
+            if _is_browser_check(body):
+                _browser_mode = True
+                print("    stooq wymaga sprawdzenia przeglądarki, więc dalsze pliki pobiorę przez\n"
+                      "    Twoją przeglądarkę. Otworzą się karty stooq i pliki trafią do Pobranych.")
+                break
+            if head.startswith("<") and "apikey" in body.lower():
                 needs_key = True
                 break
-            snippet = _page_text(text)[:80] if head.startswith("<") else text[:60]
+            snippet = _page_text(body)[:80] if head.startswith("<") else body[:60]
             errors.append(f"{url.split('/')[2]}: HTTP {r.status_code} '{snippet}'")
-        if not needs_key:
+        if text is not None or not needs_key:
             break
         _ask_apikey("Stooq nie przyjął zapytania bez klucza API." if not key
                     else "Stooq odrzucił zapisany klucz API (wygasł albo jest błędny).")
+    if text is None and _browser_mode:
+        text = _browser_fetch(symbol)
+        if text == "":
+            errors.append("stooq nie ma danych dla tego symbolu")
+            text = None
+        elif text is None:
+            errors.append("plik nie pobrał się w przeglądarce")
+    if text is not None:
+        RAW_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_text(text.lstrip("\ufeff").strip() + "\n", encoding="utf-8")
+        return _parse_csv(path)
     if path.exists():  # odświeżenie się nie udało – zostajemy przy starych danych
         return _parse_csv(path)
     print(f"  [brak danych] {symbol}: {'; '.join(errors) or 'brak odpowiedzi'}")
@@ -220,6 +351,8 @@ def load_market_data(refresh: bool = False) -> MarketData:
         combined = None
         label = pd.Series(dtype=object)
         for src in asset.sources:
+            if combined is not None and len(combined) and combined.index.min() <= TARGET_START:
+                break  # historia jest już wystarczająco długa
             sym, res = _source_returns(src, asset.ter, fx, refresh)
             if res is None:
                 continue
