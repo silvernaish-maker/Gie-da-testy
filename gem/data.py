@@ -151,10 +151,29 @@ def _downloaded_file(symbol: str, since: float):
     return max(found, key=lambda f: f.stat().st_mtime) if found else None
 
 
-def _wait_for_download(folder: Path, before: dict, timeout: float):
+def _key_pressed():
+    """Litera wciśnięta w konsoli (bez czekania na Enter) albo None."""
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+            if msvcrt.kbhit():
+                return msvcrt.getwch().lower()
+            return None
+        import select
+        if sys.stdin and sys.stdin.isatty() and select.select([sys.stdin], [], [], 0)[0]:
+            return sys.stdin.readline().strip().lower()[:1] or "\n"
+    except Exception:
+        pass
+    return None
+
+
+def _wait_for_download(folder: Path, before: dict, timeout: float, allow_skip=False):
+    """Czeka na nowy plik CSV w folderze. Zwraca ścieżkę, None (czas minął) albo "skip"."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         time.sleep(1)
+        if allow_skip and _key_pressed() == "p":
+            return "skip"
         for f in folder.glob("*.csv"):
             try:
                 st = f.stat()
@@ -172,7 +191,12 @@ def _wait_for_download(folder: Path, before: dict, timeout: float):
 
 
 def _browser_fetch(symbol: str) -> str | None:
-    """Pobranie CSV przez przeglądarkę użytkownika (stooq blokuje skrypty)."""
+    """Pobranie CSV przez przeglądarkę użytkownika (stooq blokuje skrypty).
+
+    Bezpośrednie linki do plików stooq odrzuca („Odmowa dostępu”), więc
+    otwieramy stronę z danymi historycznymi, a użytkownik klika na niej
+    „Pobierz dane w pliku .csv”. Pobrany plik odbieramy z folderu Pobrane.
+    """
     global _browser_waits
     folder = _downloads_dir()
     # plik mógł zostać pobrany wcześniej (np. ręcznie albo przy poprzednim uruchomieniu)
@@ -184,36 +208,34 @@ def _browser_fetch(symbol: str) -> str | None:
     if not folder.is_dir():
         raise StooqError(f"Nie znalazłem folderu pobranych plików {folder}. "
                          "Ustaw zmienną GEM_DOWNLOADS na folder, do którego przeglądarka zapisuje pliki.")
-    key = _load_apikey()
-    url = STOOQ_URLS[0].format(sym=quote(symbol)) + (f"&apikey={key}" if key else "")
+    if _browser_waits == 0:
+        print("\n    ================================================================\n"
+              "    Dla każdego symbolu otworzę w przeglądarce stronę z danymi stooq.\n"
+              "    Przewiń ją na sam dół i kliknij link „Pobierz dane w pliku .csv”.\n"
+              "    Skrypt sam zauważy pobrany plik i otworzy następną stronę.\n"
+              "    Jeśli strona pokazuje „Brak danych”, naciśnij tutaj klawisz p.\n"
+              "    ================================================================\n")
+    _browser_waits += 1
+    page = f"https://stooq.pl/q/d/?s={quote(symbol)}"
     before = {}
     for f in folder.glob("*.csv"):
         try:
             before[f] = f.stat().st_mtime
         except OSError:
             pass
-    for attempt in range(2):
-        webbrowser.open_new_tab(url)
-        timeout = 60 if _browser_waits == 0 else 30
-        _browser_waits += 1
-        print(f"    otworzyłem link w przeglądarce, czekam na plik w {folder} (do {timeout} s)")
-        f = _wait_for_download(folder, before, timeout)
-        if f is None and attempt == 0 and sys.stdin and sys.stdin.isatty():
-            print("    Plik się nie pobrał. Zajrzyj do przeglądarki na kartę stooq:\n"
-                  "    - jeśli widać weryfikację albo kod z obrazka, przejdź ją,\n"
-                  "    - jeśli potem widać link „Pobierz dane w pliku .csv”, kliknij go.")
-            answer = input("    Potem naciśnij Enter (albo wpisz p i Enter, żeby pominąć ten symbol): ")
-            if answer.strip().lower().startswith("p"):
-                return None
-            # plik mógł się pobrać, gdy użytkownik klikał w przeglądarce
-            f = _wait_for_download(folder, before, 2)
-            if f is None:
-                continue
-        if f is None:
+    webbrowser.open_new_tab(page)
+    print(f"    otworzyłem {page}\n    kliknij tam „Pobierz dane w pliku .csv” (p = pomiń)")
+    while True:
+        f = _wait_for_download(folder, before, 180, allow_skip=True)
+        if f == "skip":
             return None
-        text = f.read_text(encoding="utf-8", errors="replace")
-        return text if _is_csv(text) else ""
-    return None
+        if f is not None:
+            text = f.read_text(encoding="utf-8", errors="replace")
+            return text if _is_csv(text) else ""
+        if not (sys.stdin and sys.stdin.isatty()):
+            return None
+        if input("    Nadal czekam na plik. Enter = czekaj dalej, p + Enter = pomiń: ").strip().lower().startswith("p"):
+            return None
 
 
 def fetch(symbol: str, refresh: bool = False) -> pd.Series | None:

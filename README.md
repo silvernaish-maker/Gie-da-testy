@@ -62,11 +62,13 @@ na Windows zaznacz w instalatorze „Add python.exe to PATH”).
 ### Pobieranie ze stooq
 
 Od 2026 r. stooq blokuje pobieranie plików przez skrypty (sprawdza, czy po drugiej
-stronie jest przeglądarka). Wtedy skrypt sam otwiera linki do plików CSV w Twojej
-przeglądarce, a pobrane pliki odbiera z folderu **Pobrane**. Otworzy się kilkanaście kart
-stooq. Po zakończeniu możesz je zamknąć. Jeśli przeglądarka pyta, czy zezwolić stronie
-na pobieranie wielu plików, wybierz **Zezwalaj**. Gdy stooq pokaże weryfikację albo kod
-z obrazka, przejdź ją w przeglądarce i naciśnij Enter w oknie skryptu.
+stronie jest przeglądarka, a bezpośrednie linki do plików odrzuca komunikatem
+„Odmowa dostępu”). Wtedy skrypt otwiera w Twojej przeglądarce stronę z danymi
+historycznymi każdego symbolu. Przewiń ją na dół i kliknij **„Pobierz dane w pliku .csv”**.
+Skrypt sam zauważy plik w folderze **Pobrane** i otworzy następną stronę. Jeśli strona
+pokazuje „Brak danych”, naciśnij w oknie skryptu klawisz `p`, żeby pominąć symbol.
+Pobrane pliki zapisują się w `data/raw/`, więc przy kolejnych uruchomieniach nic nie
+trzeba klikać (chyba że z `--refresh`).
 
 Jeśli przeglądarka zapisuje pliki gdzie indziej niż w Pobranych, ustaw zmienną
 środowiskową `GEM_DOWNLOADS` na ten folder. Gdyby stooq zażądał klucza API, skrypt

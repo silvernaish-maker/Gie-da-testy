@@ -77,7 +77,7 @@ def test_falls_back_to_browser_when_stooq_blocks_scripts(stooq, tmp_path, monkey
     monkeypatch.setattr(data.webbrowser, "open_new_tab", fake_open)
     s = data.fetch("usdpln")
     assert s.iloc[-1] == pytest.approx(4.1)
-    assert opened == ["https://stooq.pl/q/d/l/?s=usdpln&i=d"]
+    assert opened == ["https://stooq.pl/q/d/?s=usdpln"]
     assert (data.RAW_DIR / "usdpln.csv").exists()
     # symbol bez danych: plik z „Brak danych” nie jest traktowany jak notowania
     assert data.fetch("nic") is None
