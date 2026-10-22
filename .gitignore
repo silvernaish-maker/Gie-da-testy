@@ -3,3 +3,4 @@ __pycache__/
 .pytest_cache/
 # surowe notowania ze stooq (do pobrania skryptem)
 data/raw/
+.venv/

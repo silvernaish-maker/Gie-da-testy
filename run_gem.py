@@ -94,6 +94,8 @@ def main():
     ap.add_argument("--start", help="najwcześniejsza data startu (RRRR-MM)")
     ap.add_argument("--end", help="koniec symulacji (RRRR-MM)")
     ap.add_argument("--out", default=str(ROOT / "reports" / "gem_raport.html"))
+    ap.add_argument("--fragment", action="store_true",
+                    help="zapisz raport bez szkieletu <html> (do publikacji jako strona Claude)")
     args = ap.parse_args()
 
     print("Pobieram/wczytuję notowania...")
@@ -231,7 +233,10 @@ def main():
     }
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(report.render(ctx), encoding="utf-8")
+    page = report.render(ctx)
+    if not args.fragment:
+        page = report.standalone(page)
+    out.write_text(page, encoding="utf-8")
 
     # --- CSV z historią sygnałów ------------------------------------------------------
     csv = mom_all.loc[t0:end].add_prefix("mom_").round(4)
@@ -240,7 +245,7 @@ def main():
     csv["wartosc_IKE"] = gem_ike.values.round(2)
     csv["wartosc_Belka"] = gem_tax.values.round(2)
     csv.index.name = "koniec_miesiaca"
-    csv.to_csv(out.with_name("gem_sygnaly.csv"))
+    csv.to_csv(out.with_name("gem_sygnaly.csv"), encoding="utf-8-sig")
 
     # --- podsumowanie w konsoli --------------------------------------------------------
     s = rows[0]["stats"]

@@ -48,7 +48,21 @@ stała obligacja w obronie, okna 3/6/9 miesięcy, tylko USA, tylko GPW, bez kosz
   przez 5 lat, podatek płacony ze sprzedaży części pozycji. Wyniki pokazane są
   osobno dla IKE/IKZE (bez podatku) i zwykłego rachunku.
 
-## Uruchomienie
+## Uruchomienie na własnym komputerze
+
+Potrzebny jest Python 3.10 lub nowszy ([python.org/downloads](https://www.python.org/downloads/);
+na Windows zaznacz w instalatorze „Add python.exe to PATH”).
+
+1. Rozpakuj projekt do wybranego folderu, np. `Dokumenty\GEM-symulacja`.
+2. Windows: kliknij dwukrotnie `uruchom_windows.bat`.
+   macOS/Linux: w terminalu w tym folderze wpisz `./uruchom_mac_linux.sh`.
+3. Skrypt sam utworzy środowisko Pythona (`.venv`), pobierze notowania ze stooq,
+   policzy symulację i otworzy raport w przeglądarce.
+
+Kolejne uruchomienia korzystają z zapisanych danych; świeże notowania pobierzesz,
+dopisując `--refresh` (np. `uruchom_windows.bat --refresh`).
+
+## Uruchomienie z linii poleceń
 
 ```bash
 pip install -r requirements.txt

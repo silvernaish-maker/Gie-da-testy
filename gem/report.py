@@ -140,6 +140,13 @@ def momentum_table(sig, assets):
     return _table(head, body)
 
 
+def standalone(page: str) -> str:
+    """Pełny dokument HTML do otwarcia z dysku w przeglądarce."""
+    return ('<!doctype html>\n<html lang="pl">\n<head>\n<meta charset="utf-8">\n'
+            '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
+            '</head>\n<body>\n' + page + '\n</body>\n</html>\n')
+
+
 def render(ctx) -> str:
     sig = ctx["signal"]
     assets = ctx["assets"]
